@@ -21,24 +21,24 @@ import time
 dspan = 10.
 d1wingStart = np.array([0.,0.,-dspan/2])
 d1wingEnd = np.array([0.,0.,dspan/2])
-iElemI = 5
+iElemI = 10
 iElemJ = 20
 
 # simulation parameters
 dTimeBegin = 0.
 dTimeEnd = 5.
-dTimeStep = 0.1
+dTimeStep = 0.05
 d1Time = np.arange(dTimeBegin,dTimeEnd,dTimeStep)
 iTimeSteps = len(d1Time)
 
 dQ = 20.
-dalpha = 7.
+dalpha = 5.
 d2Q = np.ones([iTimeSteps,1])*np.array([np.cos(dalpha*np.pi/180)*dQ,np.sin(dalpha*np.pi/180)*dQ,0.])
 drho = 1.225
 dmu = 1.802e-5
 
 # plotting
-bPlotDev = True
+bPlotDev = False
 
 #%% geometrical calculations
 # wing
@@ -53,7 +53,7 @@ d1yTE = np.zeros_like(d1xTE)
 dRe = drho*dQ*(d1xTE-d1xLE)/dmu
 
 # airfoil
-d1data = np.fromfile('C:/Users/fritzek/OneDrive - TNO/PhD/Code development/Python/Airfoils/NACA4412.dat',dtype=float,sep=' ')
+d1data = np.fromfile('C:/Users/fritzek/OneDrive - TNO/PhD/Code development/Python/Airfoils/NACA0012.dat',dtype=float,sep=' ')
 d1airfoilX = d1data[::2]
 d1airfoilY = d1data[1::2]
 iLEidx = np.argmin(d1airfoilX)
@@ -176,23 +176,45 @@ for t in range(0,iTimeSteps):
         d1velIndVW2B = np.sum(d2velIndVW2B,axis=1)
         d1velIndWW2B = np.sum(d2velIndWW2B,axis=1)
         
-        #circulation and loads
+        #circulation
         d1RHS = -(d2Q[t,0]*d1nX + d2Q[t,1]*d1nY + d2Q[t,2]*d1nZ + 
                  np.reshape(d1velIndUW2B,(np.size(d1velIndUW2B),1))*d1nX + 
                  np.reshape(d1velIndVW2B,(np.size(d1velIndVW2B),1))*d1nY + 
                  np.reshape(d1velIndWW2B,(np.size(d1velIndWW2B),1))*d1nZ)
         st1bound[d1Time[t]]['Gamma'] = np.linalg.solve(d2aIJ, d1RHS)
         
-        d2dZ = d2VRgridZ[1:,0:-1]-d2VRgridZ[0:-1,0:-1]
-        d2dX = 0.5*(d2VRgridX[0:-1,1:]-d2VRgridX[0:-1,0:-1]+d2VRgridX[1:,1:]-d2VRgridX[1:,0:-1])
-        d2dY = 0.5*(d2VRgridY[0:-1,1:]-d2VRgridY[0:-1,0:-1]+d2VRgridY[1:,1:]-d2VRgridY[1:,0:-1])
-        d2dc = np.sqrt(np.square(d2dX)+np.square(d2dY))
         d2Gamma = st1bound[d1Time[t]]['Gamma'].reshape([iElemJ,iElemI],order='F')
         d2GammaCor = np.hstack([d2Gamma[:,0].reshape([iElemJ,1]), d2Gamma[:,1:] - d2Gamma[:,0:-1]])
-        
         st1bound[d1Time[t]]['GammaCor'] = d2GammaCor.reshape([1,np.size(d2Gamma)],order='F')
-        st1bound[d1Time[t]]['L'] = drho*np.sqrt(np.sum(np.square(d2Q[t])))*d2GammaCor
-        st1bound[d1Time[t]]['Cl'] = np.sum(2*d2GammaCor,axis=1)/(np.sqrt(np.sum(np.square(d2Q[t]))))
+        
+        #lift
+        d2dX = 0.75*(d2VRgridX[1:,0:-1]-d2VRgridX[0:-1,0:-1])+0.25*(d2VRgridX[1:,1:]-d2VRgridX[0:-1,1:])
+        d2dY = 0.75*(d2VRgridY[1:,0:-1]-d2VRgridY[0:-1,0:-1])+0.25*(d2VRgridY[1:,1:]-d2VRgridY[0:-1,1:])
+        d2dZ = 0.75*(d2VRgridZ[1:,0:-1]-d2VRgridZ[0:-1,0:-1])+0.25*(d2VRgridZ[1:,1:]-d2VRgridZ[0:-1,1:])
+        d2eNorm = np.sqrt(np.square(d2dX)+np.square(d2dY)+np.square(d2dZ))
+        d2e1 = d2dX/d2eNorm
+        d2e2 = d2dY/d2eNorm
+        d2e3 = d2dZ/d2eNorm
+        
+        d2VtotU = d2Q[t,0] + np.sum(d2VelIndUB2B,axis=1).reshape([iElemJ,iElemI],order='F') + d1velIndUW2B.reshape([iElemJ,iElemI],order='F')
+        d2VtotV = d2Q[t,1] + np.sum(d2VelIndVB2B,axis=1).reshape([iElemJ,iElemI],order='F') + d1velIndVW2B.reshape([iElemJ,iElemI],order='F')
+        d2VtotW = d2Q[t,2] + np.sum(d2VelIndWB2B,axis=1).reshape([iElemJ,iElemI],order='F') + d1velIndWW2B.reshape([iElemJ,iElemI],order='F')
+              
+#        d2Fx = drho*(d2VtotW*d2e2 - d2VtotV*d2e3)*d2GammaCor
+#        d2Fy = drho*(d2VtotU*d2e3 - d2VtotW*d2e1)*d2GammaCor
+#        d2Fz = drho*(d2VtotV*d2e1 - d2VtotU*d2e2)*d2GammaCor
+        d2Fx = drho*(d2VtotV*d2e3 - d2VtotW*d2e2)*d2GammaCor
+        d2Fy = drho*(d2VtotW*d2e1 - d2VtotU*d2e3)*d2GammaCor
+        d2Fz = drho*(d2VtotU*d2e2 - d2VtotV*d2e1)*d2GammaCor
+       
+        st1bound[d1Time[t]]['L'] = -d2Fy/np.cos(np.arctan(d2VtotV/d2VtotU))
+        st1bound[d1Time[t]]['Ltot'] = np.sum(np.sum(st1bound[d1Time[t]]['L'],axis=1)*np.diff(d1spanPos))
+        st1bound[d1Time[t]]['Fax'] = np.sum(np.sum(d2Fx,axis=1)*np.diff(d1spanPos))
+        #lift coefficient
+        d1dc = np.interp(d1spanPos[0:-1]+0.5*np.diff(d1spanPos),d1zLE,d1elChord)
+        
+#        st1bound[d1Time[t]]['Cl'] = np.sum(st1bound[d1Time[t]]['L'],axis=1)/(0.5*drho*np.sum(np.square(d2Q[t]))*d1dc)
+        st1bound[d1Time[t]]['Cl'] = np.sum(st1bound[d1Time[t]]['L']/(0.5*drho*(np.square(d2VtotU)+np.square(d2VtotV))),axis=1)/d1dc
 
     toc[t] = time.time() - tic
     print(str("{:.2f}".format(round(100*(t+1)/iTimeSteps,2)))+'%\t\t'+
@@ -200,8 +222,6 @@ for t in range(0,iTimeSteps):
           str("{:.2f}".format(round(toc[t],3)))+'s\t\t'+
           str(iElemI*iElemJ+(t-1)*iElemJ))
     
-print('The simulation took ' + str(toc[-1]) + ' seconds.')
-
 #%% plotting
 #geometry
 import matlab.engine
@@ -241,21 +261,48 @@ fig2, (ax2,ax3) = plt.subplots(1,2)
 ax2.clear()
 ax3.clear()
 for i in range(0,iElemI):
-    ax2.plot(np.linspace(d1wingStart[2],d1wingEnd[2],iElemJ), st1bound[d1Time[t]]['GammaCor'].reshape([iElemJ,iElemI],order='F')[:,i], label='i = %s' % i)
-    ax3.plot(np.linspace(d1wingStart[2],d1wingEnd[2],iElemJ), st1bound[d1Time[t]]['L'][:,i])
+    ax2.plot(d1spanPos[0:-1]+0.5*np.diff(d1spanPos), st1bound[d1Time[t]]['GammaCor'].reshape([iElemJ,iElemI],order='F')[:,i], label='i = %s' % i)
+    ax3.plot(d1spanPos[0:-1]+0.5*np.diff(d1spanPos), st1bound[d1Time[t]]['L'][:,i])
     
-ax2.plot(np.linspace(d1wingStart[2],d1wingEnd[2],iElemJ), np.sum(st1bound[d1Time[t]]['GammaCor'].reshape([iElemJ,iElemI],order='F'),axis=1),'k')
-ax3.plot(np.linspace(d1wingStart[2],d1wingEnd[2],iElemJ), np.sum(st1bound[d1Time[t]]['L'],axis=1),'k')
+ax2.plot(d1spanPos[0:-1]+0.5*np.diff(d1spanPos), np.sum(st1bound[d1Time[t]]['GammaCor'].reshape([iElemJ,iElemI],order='F'),axis=1),'k', label='total')
+ax3.plot(d1spanPos[0:-1]+0.5*np.diff(d1spanPos), np.sum(st1bound[d1Time[t]]['L'],axis=1),'k')
 ax2.set_xlabel('Span [m]')
-ax2.set_ylabel('Circulation $\Gamma$ [$\mathrm{m}^2/\mathrm{s}$] (solid lines)')
-ax2.set_xlabel('Span [m]')
-ax3.set_ylabel('Lift $L$ [N/m] (dashed lines)')
+ax2.set_ylabel('Circulation $\Gamma$ [$\mathrm{m}^2/\mathrm{s}$]')
+ax3.set_xlabel('Span [m]')
+ax3.set_ylabel('Lift $L$ [N/m]')
 ax2.legend()
 
 #lift coefficient
 fig3 = plt.figure('Lift coefficient')
 ax4 = fig3.add_subplot()
 ax4.clear()
-ax4.plot(np.linspace(d1wingStart[2],d1wingEnd[2],iElemJ), st1bound[d1Time[t]]['Cl'],'k')
+ax4.plot(d1spanPos[0:-1]+0.5*np.diff(d1spanPos), st1bound[d1Time[t]]['Cl'],'k')
 ax4.set_xlabel('Span [m]')
 ax4.set_ylabel('$c_l$ [-]')
+
+#forces
+fig4 = plt.figure('Forces')
+ax5 = fig4.add_subplot()
+ax5.clear()
+d1Ltot = np.empty(0)
+d1Fax = np.empty(0)
+for i in d1Time[1:]:
+    d1Ltot = np.append(d1Ltot,st1bound[i]['Ltot'])
+    d1Fax = np.append(d1Fax,st1bound[i]['Fax'])
+ax5.plot(d1Time[1:],d1Ltot, label='Total lift')
+ax5.plot(d1Time[1:],d1Fax, label='Axial force')
+ax5.set_xlabel('Time [s]')
+ax5.set_ylabel('Forces [N]')
+ax5.legend()
+
+d1Rz = d1spanPos[0:-1]+0.5*np.diff(d1spanPos)
+d1Rg = np.sum(st1bound[d1Time[t]]['GammaCor'].reshape([iElemJ,iElemI],order='F'),axis=1)
+d1Rc = st1bound[d1Time[t]]['Cl']
+d2out = np.vstack([d1Rz,d1Rg,d1Rc]).T
+d2out1 = np.vstack([d1Rz,d1Rg,d1Rc])
+np.savetxt('test.txt',d2out)
+for i in range(0,len(d1Rz)):
+    print('('+str(d1Rz[i])+','+str(d1Rg[i])+')')
+    
+for i in range(0,len(d1Rz)):
+    print('('+str(d1Rz[i])+','+str(d1Rc[i])+')')
